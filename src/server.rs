@@ -1,20 +1,20 @@
-use dirs::home_dir;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
+use dirs::home_dir;
+use env_logger::Builder;
+use futures::future::try_join;
+use futures::{StreamExt, TryFutureExt};
+use log::LevelFilter;
+use log::{error, info};
+use structopt::{self, StructOpt};
 use tokio::net::TcpStream;
 use tokio::prelude::*;
 
-use anyhow::{Context, Result};
-use futures::future::try_join;
-use futures::{StreamExt, TryFutureExt};
-use log::{error, info};
-use structopt::{self, StructOpt};
-
-use env_logger::Builder;
-use log::LevelFilter;
+use qtun::args;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "qtun-server")]
@@ -41,14 +41,14 @@ struct Opt {
     #[structopt(long = "stateless-retry")]
     stateless_retry: bool,
     /// Address to listen on
-    #[structopt(long = "local", default_value = "0.0.0.0:4433")]
-    local: SocketAddr,
+    #[structopt(long = "listen", default_value = "0.0.0.0:4433")]
+    listen: SocketAddr,
     /// Address to listen on
-    #[structopt(long = "remote", default_value = "127.0.0.1:8138")]
-    remote: SocketAddr,
-    /// Specify the hostname to load TLS certificates from ~/.acme.sh/hostname
-    #[structopt(long = "acme-hostname")]
-    acme_hostname: Option<String>,
+    #[structopt(long = "relay", default_value = "127.0.0.1:8138")]
+    relay: SocketAddr,
+    /// Specify the host to load TLS certificates from ~/.acme.sh/host
+    #[structopt(long = "acme-host")]
+    acme_host: Option<String>,
 }
 
 #[tokio::main]
@@ -70,21 +70,41 @@ async fn main() -> Result<()> {
         server_config.use_stateless_retry(true);
     }
 
-    let mut key_path = PathBuf::new();
-    let mut cert_path = PathBuf::new();
+    // init all parameters
+    let mut cert_path = options.cert;
+    let mut key_path = options.key;
+    let mut acme_host = options.acme_host;
+    let mut listen_addr = options.listen;
+    let mut relay_addr = options.relay;
 
-    if let Some(hostname) = options.acme_hostname {
-        key_path.push(home_dir().unwrap_or(PathBuf::from("~")));
-        key_path.push(format!(".acme.sh/{a}/{a}.key", a = hostname));
+    // parse environment variables
+    if let Ok((ss_local_addr, ss_remote_addr, ss_plugin_opts)) = args::parse_env() {
+        relay_addr = ss_local_addr;
+        listen_addr = ss_remote_addr;
 
-        cert_path.push(home_dir().unwrap_or(PathBuf::from("~")));
-        cert_path.push(format!(".acme.sh/{}/fullchain.cer", hostname));
-
-        println!("{:?}", key_path);
-    } else {
-        key_path.push(options.key);
-        cert_path.push(options.cert);
+        if let Some(cert) = ss_plugin_opts.get("cert") {
+            cert_path = PathBuf::from(cert);
+        }
+        if let Some(key) = ss_plugin_opts.get("key") {
+            key_path = PathBuf::from(key);
+        }
+        if let Some(host) = ss_plugin_opts.get("acme_host") {
+            acme_host = Some(host.clone());
+        }
     }
+
+    if let Some(host) = acme_host {
+        key_path = PathBuf::new();
+        key_path.push(home_dir().unwrap_or_else(|| PathBuf::from("~")));
+        key_path.push(format!(".acme.sh/{a}/{a}.key", a = host));
+
+        cert_path = PathBuf::new();
+        cert_path.push(home_dir().unwrap_or_else(|| PathBuf::from("~")));
+        cert_path.push(format!(".acme.sh/{}/fullchain.cer", host));
+    }
+
+    info!("loading cert: {:?}", cert_path);
+    info!("loading key: {:?}", key_path);
 
     // load certificates
     let key = fs::read(&key_path).context("failed to read private key")?;
@@ -104,10 +124,10 @@ async fn main() -> Result<()> {
     let mut endpoint = quinn::Endpoint::builder();
     endpoint.listen(server_config.build());
 
-    let remote = Arc::<SocketAddr>::from(options.remote);
+    let remote = Arc::<SocketAddr>::from(relay_addr);
 
     let mut incoming = {
-        let (endpoint, incoming) = endpoint.bind(&options.local)?;
+        let (endpoint, incoming) = endpoint.bind(&listen_addr)?;
         info!("listening on {}", endpoint.local_addr()?);
         incoming
     };
@@ -126,7 +146,6 @@ async fn main() -> Result<()> {
 
 async fn handle_connection(remote: Arc<SocketAddr>, conn: quinn::Connecting) -> Result<()> {
     let quinn::NewConnection {
-        connection: _,
         mut bi_streams,
         ..
     } = conn.await?;

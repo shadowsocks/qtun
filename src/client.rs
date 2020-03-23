@@ -13,15 +13,17 @@ use structopt::{self, StructOpt};
 use env_logger::Builder;
 use log::LevelFilter;
 
+use qtun::args;
+
 #[derive(StructOpt, Debug)]
 #[structopt(name = "qtun-client")]
 struct Opt {
     /// Address to listen on
-    #[structopt(long = "local", default_value = "127.0.0.1:8138")]
-    local: SocketAddr,
+    #[structopt(long = "listen", default_value = "127.0.0.1:8138")]
+    listen: SocketAddr,
     /// Address to listen on
-    #[structopt(long = "remote", default_value = "127.0.0.1:4433")]
-    remote: SocketAddr,
+    #[structopt(long = "relay", default_value = "127.0.0.1:4433")]
+    relay: SocketAddr,
     /// Override hostname used for certificate verification
     #[structopt(long = "host", default_value = "bing.com")]
     host: String,
@@ -29,12 +31,29 @@ struct Opt {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // setup log
     let mut log_builder = Builder::new();
     log_builder.filter(None, LevelFilter::Info).default_format();
     log_builder.filter(Some("qtun-client"), LevelFilter::Debug);
     log_builder.init();
 
+    // parse command line args
     let options = Opt::from_args();
+
+    // init all parameters
+    let mut listen_addr = options.listen;
+    let mut relay_addr = options.relay;
+    let mut host = options.host;
+
+    // parse environment variables
+    if let Ok((ss_local_addr, ss_remote_addr, ss_plugin_opts)) = args::parse_env() {
+        // init all parameters
+        listen_addr = ss_local_addr;
+        relay_addr = ss_remote_addr;
+        if let Some(h) = ss_plugin_opts.get("host") {
+            host = h.clone();
+        }
+    }
 
     let mut endpoint = quinn::Endpoint::builder();
     let client_config = quinn::ClientConfigBuilder::default();
@@ -42,11 +61,13 @@ async fn main() -> Result<()> {
 
     let (endpoint, _) = endpoint.bind(&"[::]:0".parse().unwrap())?;
 
-    let remote = Arc::<SocketAddr>::from(options.remote);
-    let host = Arc::<String>::from(options.host);
+    let remote = Arc::<SocketAddr>::from(relay_addr);
+    let host = Arc::<String>::from(host);
     let endpoint = Arc::<Endpoint>::from(endpoint);
 
-    let mut listener = TcpListener::bind(options.local).await?;
+    info!("listening on {}", listen_addr);
+
+    let mut listener = TcpListener::bind(listen_addr).await?;
 
     while let Ok((inbound, _)) = listener.accept().await {
         info!("connection incoming");
