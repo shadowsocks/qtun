@@ -1,7 +1,8 @@
 use std::fs;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{PathBuf};
 use std::sync::Arc;
+use dirs::home_dir;
 
 use tokio::net::TcpStream;
 use tokio::prelude::*;
@@ -9,8 +10,11 @@ use tokio::prelude::*;
 use anyhow::{Context, Result};
 use futures::future::try_join;
 use futures::{StreamExt, TryFutureExt};
+use log::{error, info};
 use structopt::{self, StructOpt};
-use tracing::{error, info};
+
+use env_logger::Builder;
+use log::LevelFilter;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "qtun-server")]
@@ -42,10 +46,18 @@ struct Opt {
     /// Address to listen on
     #[structopt(long = "remote", default_value = "127.0.0.1:8138")]
     remote: SocketAddr,
+    /// Specify the hostname to load TLS certificates from ~/.acme.sh/hostname
+    #[structopt(long = "acme-hostname")]
+    acme_hostname: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let mut log_builder = Builder::new();
+    log_builder.filter(None, LevelFilter::Info).default_format();
+    log_builder.filter(Some("qtun-server"), LevelFilter::Debug);
+    log_builder.init();
+
     let options = Opt::from_args();
 
     let mut transport_config = quinn::TransportConfig::default();
@@ -58,16 +70,30 @@ async fn main() -> Result<()> {
         server_config.use_stateless_retry(true);
     }
 
+    let mut key_path = PathBuf::new();
+    let mut cert_path = PathBuf::new();
+
+    if let Some(hostname) = options.acme_hostname {
+        key_path.push(home_dir().unwrap_or(PathBuf::from("~")));
+        key_path.push(format!(".acme.sh/{a}/{a}.key", a = hostname));
+
+        cert_path.push(home_dir().unwrap_or(PathBuf::from("~")));
+        cert_path.push(format!(".acme.sh/{}/fullchain.cer", hostname));
+
+        println!("{:?}", key_path);
+    } else {
+        key_path.push(options.key);
+        cert_path.push(options.cert);
+    }
+
     // load certificates
-    let key_path = &options.key;
-    let cert_path = &options.cert;
-    let key = fs::read(key_path).context("failed to read private key")?;
+    let key = fs::read(&key_path).context("failed to read private key")?;
     let key = if key_path.extension().map_or(false, |x| x == "der") {
         quinn::PrivateKey::from_der(&key)?
     } else {
         quinn::PrivateKey::from_pem(&key)?
     };
-    let cert_chain = fs::read(cert_path).context("failed to read certificate chain")?;
+    let cert_chain = fs::read(&cert_path).context("failed to read certificate chain")?;
     let cert_chain = if cert_path.extension().map_or(false, |x| x == "der") {
         quinn::CertificateChain::from_certs(quinn::Certificate::from_der(&cert_chain))
     } else {

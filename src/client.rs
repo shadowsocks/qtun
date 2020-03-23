@@ -6,18 +6,21 @@ use tokio::prelude::*;
 
 use anyhow::{anyhow, Result};
 use futures::future::try_join;
+use log::info;
 use quinn::Endpoint;
 use structopt::{self, StructOpt};
-use tracing::info;
+
+use env_logger::Builder;
+use log::LevelFilter;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "qtun-client")]
 struct Opt {
     /// Address to listen on
-    #[structopt(long = "local", default_value = "0.0.0.0:4433")]
+    #[structopt(long = "local", default_value = "127.0.0.1:8138")]
     local: SocketAddr,
     /// Address to listen on
-    #[structopt(long = "remote", default_value = "127.0.0.1:8138")]
+    #[structopt(long = "remote", default_value = "127.0.0.1:4433")]
     remote: SocketAddr,
     /// Override hostname used for certificate verification
     #[structopt(long = "host", default_value = "bing.com")]
@@ -26,6 +29,11 @@ struct Opt {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let mut log_builder = Builder::new();
+    log_builder.filter(None, LevelFilter::Info).default_format();
+    log_builder.filter(Some("qtun-client"), LevelFilter::Debug);
+    log_builder.init();
+
     let options = Opt::from_args();
 
     let mut endpoint = quinn::Endpoint::builder();
