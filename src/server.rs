@@ -1,8 +1,8 @@
+use dirs::home_dir;
 use std::fs;
 use std::net::SocketAddr;
-use std::path::{PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-use dirs::home_dir;
 
 use tokio::net::TcpStream;
 use tokio::prelude::*;
