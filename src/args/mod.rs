@@ -13,8 +13,8 @@ pub fn parse_env() -> Result <(
     let ss_local_host = var("SS_LOCAL_HOST")?;
     let ss_local_port = var("SS_LOCAL_PORT")?;
 
-    let ss_local_addr = format!("{}:{}", ss_local_host, ss_local_port) .parse()?;
-    let ss_remote_addr = format!("{}:{}", ss_remote_host, ss_remote_port) .parse()?;
+    let ss_local_addr = format!("{}:{}", ss_local_host, ss_local_port).parse()?;
+    let ss_remote_addr = format!("{}:{}", ss_remote_host, ss_remote_port).parse()?;
 
     let ss_plugin_options = var("SS_PLUGIN_OPTIONS")?;
 
