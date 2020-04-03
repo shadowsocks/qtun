@@ -1,20 +1,22 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use std::env::var;
-use std::net::SocketAddr;
-use anyhow::Result;
+use std::net::{SocketAddr, ToSocketAddrs};
 
-pub fn parse_env() -> Result <(
-    SocketAddr,
-    SocketAddr,
-    HashMap<String, String>
-)> {
+pub fn parse_env() -> Result<(SocketAddr, SocketAddr, HashMap<String, String>)> {
     let ss_remote_host = var("SS_REMOTE_HOST")?;
     let ss_remote_port = var("SS_REMOTE_PORT")?;
     let ss_local_host = var("SS_LOCAL_HOST")?;
     let ss_local_port = var("SS_LOCAL_PORT")?;
 
-    let ss_local_addr = format!("{}:{}", ss_local_host, ss_local_port).parse()?;
-    let ss_remote_addr = format!("{}:{}", ss_remote_host, ss_remote_port).parse()?;
+    let ss_local_addr = format!("{}:{}", ss_local_host, ss_local_port)
+        .to_socket_addrs()?
+        .next()
+        .unwrap();
+    let ss_remote_addr = format!("{}:{}", ss_remote_host, ss_remote_port)
+        .to_socket_addrs()?
+        .next()
+        .unwrap();
 
     let ss_plugin_options = var("SS_PLUGIN_OPTIONS")?;
 

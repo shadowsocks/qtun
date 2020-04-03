@@ -145,10 +145,7 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_connection(remote: Arc<SocketAddr>, conn: quinn::Connecting) -> Result<()> {
-    let quinn::NewConnection {
-        mut bi_streams,
-        ..
-    } = conn.await?;
+    let quinn::NewConnection { mut bi_streams, .. } = conn.await?;
 
     async {
         info!("established");
