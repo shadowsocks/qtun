@@ -1,6 +1,6 @@
 [package]
 name = "qtun"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Max Lv <max.c.lv@gmail.com>"]
 repository = "https://github.com/madeye/qtun"
 license = "MIT"
@@ -17,10 +17,13 @@ path = "src/server.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "^0.2.7", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 bytes = "0.5"
 futures = "0.3"
-quinn = "0.6"
+rustls = "0.20"
+rustls-pemfile  = "0.2.1"
+rustls-native-certs = "0.6.1"
+quinn = "0.8"
 structopt = "0.3"
 anyhow = "1.0"
 tracing = "0.1"

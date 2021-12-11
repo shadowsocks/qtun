@@ -12,9 +12,9 @@ use log::LevelFilter;
 use log::{error, info};
 use structopt::{self, StructOpt};
 use tokio::net::TcpStream;
-use tokio::prelude::*;
 
-use qtun::args;
+mod args;
+mod common;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "qtun-server")]
@@ -60,16 +60,6 @@ async fn main() -> Result<()> {
 
     let options = Opt::from_args();
 
-    let mut transport_config = quinn::TransportConfig::default();
-    transport_config.stream_window_uni(0);
-    let mut server_config = quinn::ServerConfig::default();
-    server_config.transport = Arc::new(transport_config);
-    let mut server_config = quinn::ServerConfigBuilder::new(server_config);
-
-    if options.stateless_retry {
-        server_config.use_stateless_retry(true);
-    }
-
     // init all parameters
     let mut cert_path = options.cert;
     let mut key_path = options.key;
@@ -106,31 +96,55 @@ async fn main() -> Result<()> {
     info!("loading cert: {:?}", cert_path);
     info!("loading key: {:?}", key_path);
 
-    // load certificates
-    let key = fs::read(&key_path).context("failed to read private key")?;
+    let key = fs::read(key_path.clone()).context("failed to read private key")?;
     let key = if key_path.extension().map_or(false, |x| x == "der") {
-        quinn::PrivateKey::from_der(&key)?
+        rustls::PrivateKey(key)
     } else {
-        quinn::PrivateKey::from_pem(&key)?
+        let pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut &*key)
+            .context("malformed PKCS #8 private key")?;
+        match pkcs8.into_iter().next() {
+            Some(x) => rustls::PrivateKey(x),
+            None => {
+                let rsa = rustls_pemfile::rsa_private_keys(&mut &*key)
+                    .context("malformed PKCS #1 private key")?;
+                match rsa.into_iter().next() {
+                    Some(x) => rustls::PrivateKey(x),
+                    None => {
+                        anyhow::bail!("no private keys found");
+                    }
+                }
+            }
+        }
     };
-    let cert_chain = fs::read(&cert_path).context("failed to read certificate chain")?;
-    let cert_chain = if cert_path.extension().map_or(false, |x| x == "der") {
-        quinn::CertificateChain::from_certs(quinn::Certificate::from_der(&cert_chain))
+    let certs = fs::read(cert_path.clone()).context("failed to read certificate chain")?;
+    let certs = if cert_path.extension().map_or(false, |x| x == "der") {
+        vec![rustls::Certificate(certs)]
     } else {
-        quinn::CertificateChain::from_pem(&cert_chain)?
+        rustls_pemfile::certs(&mut &*certs)
+            .context("invalid PEM-encoded certificate")?
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect()
     };
-    server_config.certificate(cert_chain, key)?;
 
-    let mut endpoint = quinn::Endpoint::builder();
-    endpoint.listen(server_config.build());
+    let mut server_crypto = rustls::ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)?;
+    server_crypto.alpn_protocols = common::ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
+
+    let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
+    Arc::get_mut(&mut server_config.transport)
+        .unwrap()
+        .max_concurrent_uni_streams(0_u8.into());
+    if options.stateless_retry {
+        server_config.use_retry(true);
+    }
 
     let remote = Arc::<SocketAddr>::from(relay_addr);
 
-    let mut incoming = {
-        let (endpoint, incoming) = endpoint.bind(&listen_addr)?;
-        info!("listening on {}", endpoint.local_addr()?);
-        incoming
-    };
+    let (endpoint, mut incoming) = quinn::Endpoint::server(server_config, listen_addr)?;
+    eprintln!("listening on {}", endpoint.local_addr()?);
 
     while let Some(conn) = incoming.next().await {
         info!("connection incoming");
@@ -183,8 +197,8 @@ async fn transfer(
     let (mut wi, mut ri) = inbound;
     let (mut ro, mut wo) = outbound.split();
 
-    let client_to_server = io::copy(&mut ri, &mut wo);
-    let server_to_client = io::copy(&mut ro, &mut wi);
+    let client_to_server = tokio::io::copy(&mut ri, &mut wo);
+    let server_to_client = tokio::io::copy(&mut ro, &mut wi);
 
     try_join(client_to_server, server_to_client).await?;
 

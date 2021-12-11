@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::net::{TcpListener, TcpStream};
-use tokio::prelude::*;
 
 use anyhow::{anyhow, Result};
 use futures::future::try_join;
@@ -13,7 +12,8 @@ use structopt::{self, StructOpt};
 use env_logger::Builder;
 use log::LevelFilter;
 
-use qtun::args;
+mod args;
+mod common;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "qtun-client")]
@@ -55,11 +55,20 @@ async fn main() -> Result<()> {
         }
     }
 
-    let mut endpoint = quinn::Endpoint::builder();
-    let client_config = quinn::ClientConfigBuilder::default();
-    endpoint.default_client_config(client_config.build());
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
+        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    }
 
-    let (endpoint, _) = endpoint.bind(&"[::]:0".parse().unwrap())?;
+    let mut client_crypto = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+
+    client_crypto.alpn_protocols = common::ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
+
+    let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap())?;
+    endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
 
     let remote = Arc::<SocketAddr>::from(relay_addr);
     let host = Arc::<String>::from(host);
@@ -67,7 +76,7 @@ async fn main() -> Result<()> {
 
     info!("listening on {}", listen_addr);
 
-    let mut listener = TcpListener::bind(listen_addr).await?;
+    let listener = TcpListener::bind(listen_addr).await?;
 
     while let Ok((inbound, _)) = listener.accept().await {
         info!("connection incoming");
@@ -90,7 +99,7 @@ async fn transfer(
     mut inbound: TcpStream,
 ) -> Result<()> {
     let new_conn = endpoint
-        .connect(&remote, &host)?
+        .connect(*remote, &host)?
         .await
         .map_err(|e| anyhow!("failed to connect: {}", e))?;
 
@@ -104,8 +113,8 @@ async fn transfer(
         .await
         .map_err(|e| anyhow!("failed to open stream: {}", e))?;
 
-    let client_to_server = io::copy(&mut ri, &mut wo);
-    let server_to_client = io::copy(&mut ro, &mut wi);
+    let client_to_server = tokio::io::copy(&mut ri, &mut wo);
+    let server_to_client = tokio::io::copy(&mut ro, &mut wi);
 
     try_join(client_to_server, server_to_client).await?;
 
