@@ -13,6 +13,13 @@ cargo install --git https://github.com/madeye/qtun
 
 ## Examples
 
+### Issue a cert for TLS and QUIC
+
+qtun will look for TLS certificates signed by acme.sh by default. Here's some sample commands for issuing a certificate using CloudFlare. You can find commands for issuing certificates for other DNS providers at acme.sh.
+
+curl https://get.acme.sh | sh
+~/.acme.sh/acme.sh --issue --dns dns_cf -d mydomain.me
+
 ### Server
 
 ```bash
