@@ -11,6 +11,20 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install --git https://github.com/madeye/qtun
 ```
 
+## Examples
+
+### Server
+
+```bash
+./ssserver -s 0.0.0.0:443 -k example -m aes-256-gcm --plugin ./qtun-server --plugin-opts "acme_host=example.com"
+```
+
+### Client
+
+```bash
+./sslocal -s example.com:443 -k example -m aes-256-gcm --plugin ./qtun-client --plugin-opts "host=example.com"
+```
+
 ## License
 
 The MIT License (MIT)
