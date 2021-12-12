@@ -56,9 +56,18 @@ async fn main() -> Result<()> {
     }
 
     let mut roots = rustls::RootCertStore::empty();
+
     for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
         roots.add(&rustls::Certificate(cert.0)).unwrap();
     }
+
+    roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+        rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+            ta.subject,
+            ta.spki,
+            ta.name_constraints,
+        )
+    }));
 
     let mut client_crypto = rustls::ClientConfig::builder()
         .with_safe_defaults()
@@ -67,7 +76,12 @@ async fn main() -> Result<()> {
 
     client_crypto.alpn_protocols = common::ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
 
-    let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap())?;
+    // WAR for Windows endpoint
+    let mut endpoint = if cfg!(target_os = "windows") {
+        quinn::Endpoint::client("0.0.0.0:0".parse().unwrap())
+    } else {
+        quinn::Endpoint::client("[::]:0".parse().unwrap())
+    }?;
     endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
 
     let remote = Arc::<SocketAddr>::from(relay_addr);

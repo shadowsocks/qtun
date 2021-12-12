@@ -32,7 +32,7 @@ $Version = (Select-String -Pattern '^version *= *"([^"]*)"$' -Path "${PSScriptRo
 $Version = $Version -replace '"'
 
 $PackageReleasePath = "${PSScriptRoot}\release"
-$PackageName = "shadowsocks-v${Version}.${TargetTriple}.zip"
+$PackageName = "qtun-v${Version}.${TargetTriple}.zip"
 $PackagePath = "${PackageReleasePath}\${PackageName}"
 
 Write-Host $Version
