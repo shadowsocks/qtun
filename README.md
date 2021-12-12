@@ -8,7 +8,7 @@ Yet another SIP003 plugin based on IETF-QUIC
 # Install rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-cargo install --git https://github.com/madeye/qtun
+cargo install --git https://github.com/shadowsocks/qtun
 ```
 
 ## Examples
