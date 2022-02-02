@@ -2,6 +2,13 @@
 
 Yet another SIP003 plugin based on IETF-QUIC
 
+## Major features:
+
+* IETF-QUIC
+* ACME compatible
+* BBR congestion
+* Low resource usage
+
 ## Install
 
 ```bash
