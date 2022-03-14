@@ -94,6 +94,12 @@ async fn main() -> Result<()> {
 
     while let Ok((inbound, _)) = listener.accept().await {
         info!("connection incoming");
+        let socket = if cfg!(target_os = "windows") {
+            std::net::UdpSocket::bind("0.0.0.0:0").unwrap()
+        } else {
+            std::net::UdpSocket::bind("[::]:0").unwrap()
+        };
+        endpoint.rebind(socket)?;
 
         let remote = Arc::clone(&remote);
         let host = Arc::clone(&host);
