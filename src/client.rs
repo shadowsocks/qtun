@@ -122,10 +122,15 @@ async fn transfer(
                 } else {
                     std::net::UdpSocket::bind("[::]:0").unwrap()
                 };
-                endpoint.rebind(socket)?;
-                Ok(())
+                let addr = socket.local_addr().unwrap();
+                let ret = endpoint.rebind(socket);
+                if ret.is_ok() {
+                    anyhow!("rebinding to: {:?}", addr)
+                } else {
+                    anyhow!("failed to rebinding: {:?}", ret)
+                }
             } else {
-                Err(anyhow!("failed to connect: {:?}", e))
+                anyhow!("failed to connect: {:?}", e)
             }
         }).unwrap();
 
