@@ -124,14 +124,16 @@ async fn transfer(
                 };
                 let addr = socket.local_addr().unwrap();
                 let ret = endpoint.rebind(socket);
-                if ret.is_ok() {
-                    anyhow!("rebinding to: {:?}", addr)
-                } else {
-                    anyhow!("failed to rebinding: {:?}", ret)
+                match ret {
+                    Ok(_) => {
+                        info!("rebinding to: {}", addr);
+                    }
+                    Err(e) => {
+                        error!("rebind fail: {:?}", e);
+                    }
                 }
-            } else {
-                anyhow!("failed to connect: {:?}", e)
             }
+            anyhow!("failed to connect: {:?}", e)
         }).unwrap();
 
     let quinn::NewConnection {
