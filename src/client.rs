@@ -115,26 +115,7 @@ async fn transfer(
     let new_conn = endpoint
         .connect(*remote, &host)?
         .await
-        .map_err(|e| {
-            if e == ConnectionError::TimedOut {
-                let socket = if cfg!(target_os = "windows") {
-                    std::net::UdpSocket::bind("0.0.0.0:0").unwrap()
-                } else {
-                    std::net::UdpSocket::bind("[::]:0").unwrap()
-                };
-                let addr = socket.local_addr().unwrap();
-                let ret = endpoint.rebind(socket);
-                match ret {
-                    Ok(_) => {
-                        info!("rebinding to: {}", addr);
-                    }
-                    Err(e) => {
-                        error!("rebind fail: {:?}", e);
-                    }
-                }
-            }
-            anyhow!("failed to connect: {:?}", e)
-        }).unwrap();
+        .map_err(|e| anyhow!("failed to connect: {}", e))?;
 
     let quinn::NewConnection {
         connection: conn, ..
