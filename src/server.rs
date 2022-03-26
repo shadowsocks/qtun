@@ -72,25 +72,23 @@ async fn main() -> Result<()> {
         relay_addr = ss_local_addr;
         listen_addr = ss_remote_addr;
 
+        if let Some(host) = ss_plugin_opts.get("acme_host") {
+            acme_host = Some(host.clone());
+            key_path = PathBuf::new();
+            
+            key_path.push(home_dir().unwrap_or_else(|| PathBuf::from("~")));
+            key_path.push(format!(".acme.sh/{a}/{a}.key", a = host));
+
+            cert_path = PathBuf::new();
+            cert_path.push(home_dir().unwrap_or_else(|| PathBuf::from("~")));
+            cert_path.push(format!(".acme.sh/{}/fullchain.cer", host));
+        }
         if let Some(cert) = ss_plugin_opts.get("cert") {
             cert_path = PathBuf::from(cert);
         }
         if let Some(key) = ss_plugin_opts.get("key") {
             key_path = PathBuf::from(key);
         }
-        if let Some(host) = ss_plugin_opts.get("acme_host") {
-            acme_host = Some(host.clone());
-        }
-    }
-
-    if let Some(host) = acme_host {
-        key_path = PathBuf::new();
-        key_path.push(home_dir().unwrap_or_else(|| PathBuf::from("~")));
-        key_path.push(format!(".acme.sh/{a}/{a}.key", a = host));
-
-        cert_path = PathBuf::new();
-        cert_path.push(home_dir().unwrap_or_else(|| PathBuf::from("~")));
-        cert_path.push(format!(".acme.sh/{}/fullchain.cer", host));
     }
 
     info!("loading cert: {:?}", cert_path);
