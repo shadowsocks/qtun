@@ -79,9 +79,9 @@ async fn main() -> Result<()> {
 
     // WAR for Windows endpoint
     let mut endpoint = if cfg!(target_os = "windows") {
-        quinn::Endpoint::client("0.0.0.0:0".parse().unwrap())
+        Endpoint::client("0.0.0.0:0".parse().unwrap())
     } else {
-        quinn::Endpoint::client("[::]:0".parse().unwrap())
+        Endpoint::client("[::]:0".parse().unwrap())
     }?;
     endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
 
@@ -138,15 +138,11 @@ async fn transfer(
         })
         .unwrap();
 
-    let quinn::NewConnection {
-        connection: conn, ..
-    } = { new_conn };
-
     let (mut ri, mut wi) = inbound.split();
-    let (mut wo, mut ro) = conn
+    let (mut wo, mut ro) = new_conn
         .open_bi()
         .await
-        .map_err(|e| anyhow!("failed to open stream: {}", e))?;
+        .map_err(|e| anyhow!("failed to open stream: {:?}", e))?;
 
     let client_to_server = tokio::io::copy(&mut ri, &mut wo);
     let server_to_client = tokio::io::copy(&mut ro, &mut wi);

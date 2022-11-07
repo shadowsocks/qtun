@@ -4,7 +4,7 @@ version = "0.2.0"
 authors = ["Max Lv <max.c.lv@gmail.com>"]
 repository = "https://github.com/madeye/qtun"
 license = "MIT"
-edition = "2018"
+edition = "2021"
 
 [[bin]]
 name = "qtun-client"
@@ -18,16 +18,16 @@ path = "src/server.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-bytes = "0.5"
+bytes = "1.2.1"
 futures = "0.3"
 rustls = "0.20"
-rustls-pemfile  = "0.2.1"
+rustls-pemfile  = "1.0.1"
 rustls-native-certs = "0.6.1"
 webpki-roots = "0.22.1"
-quinn = "0.8"
+quinn = "0.9.0"
 structopt = "0.3"
 anyhow = "1.0"
 tracing = "0.1"
 log = "0.4"
-env_logger = "0.7"
-dirs = "2.0"
+env_logger = "0.9.1"
+dirs = "4.0.0"
