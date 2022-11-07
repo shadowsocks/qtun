@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use dirs::home_dir;
 use env_logger::Builder;
 use futures::future::try_join;
-use futures::{StreamExt, TryFutureExt};
+use futures::TryFutureExt;
 use log::LevelFilter;
 use log::{error, info};
 use structopt::{self, StructOpt};
@@ -145,10 +145,10 @@ async fn main() -> Result<()> {
 
     let remote = Arc::<SocketAddr>::from(relay_addr);
 
-    let (endpoint, mut incoming) = quinn::Endpoint::server(server_config, listen_addr)?;
+    let endpoint = quinn::Endpoint::server(server_config, listen_addr)?;
     eprintln!("listening on {}", endpoint.local_addr()?);
 
-    while let Some(conn) = incoming.next().await {
+    while let Some(conn) = endpoint.accept().await {
         info!("connection incoming");
         tokio::spawn(
             handle_connection(remote.clone(), conn).unwrap_or_else(move |e| {
@@ -161,14 +161,15 @@ async fn main() -> Result<()> {
 }
 
 async fn handle_connection(remote: Arc<SocketAddr>, conn: quinn::Connecting) -> Result<()> {
-    let quinn::NewConnection { mut bi_streams, .. } = conn.await?;
+    let bi_streams = conn.await?;
 
     async {
         info!("established");
 
         // Each stream initiated by the client constitutes a new request.
-        while let Some(stream) = bi_streams.next().await {
-            let stream = match stream {
+        loop {
+            // let (stream) = bi_streams.accept_bi().await
+            let stream = match bi_streams.accept_bi().await {
                 Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
                     info!("connection closed");
                     return Ok(());
@@ -183,7 +184,6 @@ async fn handle_connection(remote: Arc<SocketAddr>, conn: quinn::Connecting) -> 
                     .unwrap_or_else(move |e| error!("failed: {reason}", reason = e.to_string())),
             );
         }
-        Ok(())
     }
     .await?;
 
