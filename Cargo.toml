@@ -21,7 +21,7 @@ tokio = { version = "1", features = ["full"] }
 bytes = "1.2.1"
 futures = "0.3"
 rustls = "0.20"
-rustls-pemfile  = "1.0.1"
+rustls-pemfile  = "1.0.2"
 rustls-native-certs = "0.6.1"
 webpki-roots = "0.22.1"
 quinn = "0.9.0"

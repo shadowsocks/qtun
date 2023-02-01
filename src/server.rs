@@ -9,9 +9,10 @@ use env_logger::Builder;
 use futures::future::try_join;
 use futures::TryFutureExt;
 use log::LevelFilter;
-use log::{error, info};
+use log::{error, info, debug};
 use structopt::{self, StructOpt};
 use tokio::net::TcpStream;
+use rustls_pemfile::Item;
 
 mod args;
 mod common;
@@ -98,24 +99,38 @@ async fn main() -> Result<()> {
 
     let key = fs::read(key_path.clone()).context("failed to read private key")?;
     let key = if key_path.extension().map_or(false, |x| x == "der") {
+        debug!("private key with DER format");
         rustls::PrivateKey(key)
     } else {
-        let pkcs8 = rustls_pemfile::pkcs8_private_keys(&mut &*key)
-            .context("malformed PKCS #8 private key")?;
-        match pkcs8.into_iter().next() {
-            Some(x) => rustls::PrivateKey(x),
-            None => {
-                let rsa = rustls_pemfile::rsa_private_keys(&mut &*key)
-                    .context("malformed PKCS #1 private key")?;
-                match rsa.into_iter().next() {
-                    Some(x) => rustls::PrivateKey(x),
-                    None => {
+        match rustls_pemfile::read_one(&mut &*key) {
+            Ok(x) => {
+                match x.unwrap() {
+                    Item::RSAKey(key) => {
+                        debug!("private key with PKCS #1 format");
+                        rustls::PrivateKey(key)
+                    },
+                    Item::PKCS8Key(key) => {
+                        debug!("private key with PKCS #8 format");
+                        rustls::PrivateKey(key)
+                    },
+                    Item::ECKey(key) => {
+                        debug!("private key with SEC1 format");
+                        rustls::PrivateKey(key)
+                    },
+                    Item::X509Certificate(_) => {
+                        anyhow::bail!("you should provide a key file instead of cert");
+                    },
+                    _ => {
                         anyhow::bail!("no private keys found");
-                    }
+                    },
                 }
+            }
+            Err(_) => {
+                anyhow::bail!("malformed private key");
             }
         }
     };
+
     let certs = fs::read(cert_path.clone()).context("failed to read certificate chain")?;
     let certs = if cert_path.extension().map_or(false, |x| x == "der") {
         vec![rustls::Certificate(certs)]
