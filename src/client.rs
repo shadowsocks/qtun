@@ -47,10 +47,12 @@ async fn main() -> Result<()> {
     let mut host = options.host;
 
     // parse environment variables
-    if let Ok((ss_local_addr, ss_remote_addr, ss_plugin_opts)) = args::parse_env() {
+    if let Ok((ss_local_addr, ss_remote_addr)) = args::parse_env_addr() {
         // init all parameters
         listen_addr = ss_local_addr;
         relay_addr = ss_remote_addr;
+    }
+    if let Ok(ss_plugin_opts) = args::parse_env_opts() {
         if let Some(h) = ss_plugin_opts.get("host") {
             host = h.clone();
         }

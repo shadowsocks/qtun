@@ -9,10 +9,10 @@ use env_logger::Builder;
 use futures::future::try_join;
 use futures::TryFutureExt;
 use log::LevelFilter;
-use log::{error, info, debug};
+use log::{debug, error, info};
+use rustls_pemfile::Item;
 use structopt::{self, StructOpt};
 use tokio::net::TcpStream;
-use rustls_pemfile::Item;
 
 mod args;
 mod common;
@@ -69,10 +69,11 @@ async fn main() -> Result<()> {
     let mut relay_addr = options.relay;
 
     // parse environment variables
-    if let Ok((ss_local_addr, ss_remote_addr, ss_plugin_opts)) = args::parse_env() {
+    if let Ok((ss_local_addr, ss_remote_addr)) = args::parse_env_addr() {
         relay_addr = ss_local_addr;
         listen_addr = ss_remote_addr;
-
+    }
+    if let Ok(ss_plugin_opts) = args::parse_env_opts() {
         if let Some(cert) = ss_plugin_opts.get("cert") {
             cert_path = PathBuf::from(cert);
         }
@@ -103,28 +104,26 @@ async fn main() -> Result<()> {
         rustls::PrivateKey(key)
     } else {
         match rustls_pemfile::read_one(&mut &*key) {
-            Ok(x) => {
-                match x.unwrap() {
-                    Item::RSAKey(key) => {
-                        debug!("private key with PKCS #1 format");
-                        rustls::PrivateKey(key)
-                    },
-                    Item::PKCS8Key(key) => {
-                        debug!("private key with PKCS #8 format");
-                        rustls::PrivateKey(key)
-                    },
-                    Item::ECKey(key) => {
-                        debug!("private key with SEC1 format");
-                        rustls::PrivateKey(key)
-                    },
-                    Item::X509Certificate(_) => {
-                        anyhow::bail!("you should provide a key file instead of cert");
-                    },
-                    _ => {
-                        anyhow::bail!("no private keys found");
-                    },
+            Ok(x) => match x.unwrap() {
+                Item::RSAKey(key) => {
+                    debug!("private key with PKCS #1 format");
+                    rustls::PrivateKey(key)
                 }
-            }
+                Item::PKCS8Key(key) => {
+                    debug!("private key with PKCS #8 format");
+                    rustls::PrivateKey(key)
+                }
+                Item::ECKey(key) => {
+                    debug!("private key with SEC1 format");
+                    rustls::PrivateKey(key)
+                }
+                Item::X509Certificate(_) => {
+                    anyhow::bail!("you should provide a key file instead of cert");
+                }
+                _ => {
+                    anyhow::bail!("no private keys found");
+                }
+            },
             Err(_) => {
                 anyhow::bail!("malformed private key");
             }

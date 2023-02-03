@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::env::var;
 use std::net::{SocketAddr, ToSocketAddrs};
 
-pub fn parse_env() -> Result<(SocketAddr, SocketAddr, HashMap<String, String>)> {
+pub fn parse_env_addr() -> Result<(SocketAddr, SocketAddr)> {
     let ss_remote_host = var("SS_REMOTE_HOST")?;
     let ss_remote_port = var("SS_REMOTE_PORT")?;
     let ss_local_host = var("SS_LOCAL_HOST")?;
@@ -18,11 +18,15 @@ pub fn parse_env() -> Result<(SocketAddr, SocketAddr, HashMap<String, String>)> 
         .next()
         .unwrap();
 
+    Ok((ss_local_addr, ss_remote_addr))
+}
+
+pub fn parse_env_opts() -> Result<HashMap<String, String>> {
     let ss_plugin_options = var("SS_PLUGIN_OPTIONS")?;
 
     let ss_plugin_options = parse_plugin_options(&ss_plugin_options);
 
-    Ok((ss_local_addr, ss_remote_addr, ss_plugin_options))
+    Ok(ss_plugin_options)
 }
 
 /// Parse a name–value mapping as from SS_PLUGIN_OPTIONS.
