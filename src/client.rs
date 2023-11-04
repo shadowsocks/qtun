@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         roots.add(&rustls::Certificate(cert.0)).unwrap();
     }
 
-    roots.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+    roots.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
         rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
             ta.subject,
             ta.spki,
