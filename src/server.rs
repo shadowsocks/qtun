@@ -9,8 +9,9 @@ use env_logger::Builder;
 use futures::future::try_join;
 use futures::TryFutureExt;
 use log::LevelFilter;
-use log::{debug, error, info};
-use rustls_pemfile::Item;
+use log::{error, info};
+use quinn_proto::crypto::rustls::QuicServerConfig;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use structopt::{self, StructOpt};
 use tokio::net::TcpStream;
 
@@ -50,6 +51,12 @@ struct Opt {
     /// Specify the host to load TLS certificates from ~/.acme.sh/host
     #[structopt(long = "acme-host")]
     acme_host: Option<String>,
+    /// Client address to block
+    #[structopt(long = "block")]
+    block: Option<SocketAddr>,
+    /// Maximum number of concurrent connections to allow
+    #[structopt(long = "connection-limit")]
+    connection_limit: Option<usize>,
 }
 
 #[tokio::main]
@@ -99,63 +106,31 @@ async fn main() -> Result<()> {
     info!("loading key: {:?}", key_path);
 
     let key = fs::read(key_path.clone()).context("failed to read private key")?;
-    let key = if key_path.extension().map_or(false, |x| x == "der") {
-        debug!("private key with DER format");
-        rustls::PrivateKey(key)
+    let key = if key_path.extension().is_some_and(|x| x == "der") {
+        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key))
     } else {
-        match rustls_pemfile::read_one(&mut &*key) {
-            Ok(x) => match x.unwrap() {
-                Item::RSAKey(key) => {
-                    debug!("private key with PKCS #1 format");
-                    rustls::PrivateKey(key)
-                }
-                Item::PKCS8Key(key) => {
-                    debug!("private key with PKCS #8 format");
-                    rustls::PrivateKey(key)
-                }
-                Item::ECKey(key) => {
-                    debug!("private key with SEC1 format");
-                    rustls::PrivateKey(key)
-                }
-                Item::X509Certificate(_) => {
-                    anyhow::bail!("you should provide a key file instead of cert");
-                }
-                _ => {
-                    anyhow::bail!("no private keys found");
-                }
-            },
-            Err(_) => {
-                anyhow::bail!("malformed private key");
-            }
-        }
+        rustls_pemfile::private_key(&mut &*key)
+            .context("malformed PKCS #1 private key")?
+            .ok_or_else(|| anyhow::Error::msg("no private keys found"))?
     };
-
     let certs = fs::read(cert_path.clone()).context("failed to read certificate chain")?;
-    let certs = if cert_path.extension().map_or(false, |x| x == "der") {
-        vec![rustls::Certificate(certs)]
+    let certs = if cert_path.extension().is_some_and(|x| x == "der") {
+        vec![CertificateDer::from(certs)]
     } else {
         rustls_pemfile::certs(&mut &*certs)
+            .collect::<Result<_, _>>()
             .context("invalid PEM-encoded certificate")?
-            .into_iter()
-            .map(rustls::Certificate)
-            .collect()
     };
 
     let mut server_crypto = rustls::ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, key)?;
     server_crypto.alpn_protocols = common::ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
 
-    let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
-    Arc::get_mut(&mut server_config.transport)
-        .unwrap()
-        .max_concurrent_uni_streams(0_u8.into())
-        .congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default()));
-
-    if options.stateless_retry {
-        server_config.use_retry(true);
-    }
+    let mut server_config =
+        quinn::ServerConfig::with_crypto(Arc::new(QuicServerConfig::try_from(server_crypto)?));
+    let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
+    transport_config.max_concurrent_uni_streams(0_u8.into());
 
     let remote = Arc::<SocketAddr>::from(relay_addr);
 
@@ -163,18 +138,33 @@ async fn main() -> Result<()> {
     eprintln!("listening on {}", endpoint.local_addr()?);
 
     while let Some(conn) = endpoint.accept().await {
-        info!("connection incoming");
-        tokio::spawn(
-            handle_connection(remote.clone(), conn).unwrap_or_else(move |e| {
-                error!("connection failed: {reason}", reason = e.to_string())
-            }),
-        );
+        if options
+            .connection_limit
+            .is_some_and(|n| endpoint.open_connections() >= n)
+        {
+            info!("refusing due to open connection limit");
+            conn.refuse();
+        } else if Some(conn.remote_address()) == options.block {
+            info!("refusing blocked client IP address");
+            conn.refuse();
+        } else if options.stateless_retry && !conn.remote_address_validated() {
+            info!("requiring connection to validate its address");
+            conn.retry().unwrap();
+        } else {
+            info!("accepting connection");
+            let fut = handle_connection(remote.clone(), conn);
+            tokio::spawn(async move {
+                if let Err(e) = fut.await {
+                    error!("connection failed: {reason}", reason = e.to_string())
+                }
+            });
+        }
     }
 
     Ok(())
 }
 
-async fn handle_connection(remote: Arc<SocketAddr>, conn: quinn::Connecting) -> Result<()> {
+async fn handle_connection(remote: Arc<SocketAddr>, conn: quinn::Incoming) -> Result<()> {
     let bi_streams = conn.await?;
 
     async {

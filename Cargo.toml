@@ -1,10 +1,10 @@
 [package]
 name = "qtun"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Max Lv <max.c.lv@gmail.com>"]
-repository = "https://github.com/madeye/qtun"
+repository = "https://github.com/shadowsocks/qtun"
 license = "MIT"
-edition = "2021"
+edition = "2024"
 
 [[bin]]
 name = "qtun-client"
@@ -20,14 +20,17 @@ path = "src/server.rs"
 tokio = { version = "1", features = ["full"] }
 bytes = "1.2.1"
 futures = "0.3"
-rustls = "0.21.8"
-rustls-pemfile  = "1.0.2"
-rustls-native-certs = "0.6.1"
-webpki-roots = "0.25.2"
-quinn = "0.10.2"
+rustls = { version = "0.23.5", default-features = false, features = ["std"] }
+rustls-pemfile = "2"
+rustls-platform-verifier = "0.5"
+rustls-pki-types = "1.7"
+webpki-roots = "0.26.7"
+quinn = "0.11.6"
+quinn-proto = "0.11.9"
 structopt = "0.3"
 anyhow = "1.0"
 tracing = "0.1"
 log = "0.4"
 env_logger = "0.10.0"
 dirs = "5.0.1"
+rustls-native-certs = "0.8.1"

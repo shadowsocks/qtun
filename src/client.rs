@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use quinn::crypto::rustls::QuicClientConfig;
 use tokio::net::{TcpListener, TcpStream};
 
 use anyhow::{anyhow, Result};
@@ -58,22 +59,15 @@ async fn main() -> Result<()> {
         }
     }
 
-    let mut roots = rustls::RootCertStore::empty();
+    let mut roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
 
-    for cert in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
-        roots.add(&rustls::Certificate(cert.0)).unwrap();
+    for certs in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
+        roots.add(certs).unwrap();
     }
 
-    roots.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-        rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-            ta.subject,
-            ta.spki,
-            ta.name_constraints,
-        )
-    }));
-
     let mut client_crypto = rustls::ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(roots)
         .with_no_client_auth();
 
@@ -85,7 +79,10 @@ async fn main() -> Result<()> {
     } else {
         Endpoint::client("[::]:0".parse().unwrap())
     }?;
-    endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
+    let client_config =
+        quinn::ClientConfig::new(Arc::new(QuicClientConfig::try_from(client_crypto)?));
+
+    endpoint.set_default_client_config(client_config);
 
     let remote = Arc::<SocketAddr>::from(relay_addr);
     let host = Arc::<String>::from(host);
