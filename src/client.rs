@@ -5,11 +5,11 @@ use quinn::crypto::rustls::QuicClientConfig;
 use tokio::net::{TcpListener, TcpStream};
 
 use anyhow::{anyhow, Result};
+use clap::Parser;
 use futures::future::try_join;
 use log::{error, info};
 use quinn::ConnectionError;
 use quinn::Endpoint;
-use structopt::{self, StructOpt};
 
 use env_logger::Builder;
 use log::LevelFilter;
@@ -17,17 +17,17 @@ use log::LevelFilter;
 mod args;
 mod common;
 
-#[derive(StructOpt, Debug)]
-#[structopt(name = "qtun-client")]
+#[derive(Parser, Debug)]
+#[command(name = "qtun-client")]
 struct Opt {
     /// Address to listen on
-    #[structopt(long = "listen", default_value = "127.0.0.1:8138")]
+    #[arg(long = "listen", default_value = "127.0.0.1:8138")]
     listen: SocketAddr,
-    /// Address to listen on
-    #[structopt(long = "relay", default_value = "127.0.0.1:4433")]
+    /// Address to relay to
+    #[arg(long = "relay", default_value = "127.0.0.1:4433")]
     relay: SocketAddr,
     /// Override hostname used for certificate verification
-    #[structopt(long = "host", default_value = "bing.com")]
+    #[arg(long = "host", default_value = "bing.com")]
     host: String,
 }
 
@@ -35,12 +35,12 @@ struct Opt {
 async fn main() -> Result<()> {
     // setup log
     let mut log_builder = Builder::new();
-    log_builder.filter(None, LevelFilter::Info).default_format();
+    log_builder.filter(None, LevelFilter::Info);
     log_builder.filter(Some("qtun-client"), LevelFilter::Debug);
     log_builder.init();
 
     // parse command line args
-    let options = Opt::from_args();
+    let options = Opt::parse();
 
     // init all parameters
     let mut listen_addr = options.listen;

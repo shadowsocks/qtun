@@ -18,19 +18,18 @@ path = "src/server.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-bytes = "1.2.1"
+bytes = "1"
 futures = "0.3"
-rustls = { version = "0.23.5", default-features = false, features = ["std"] }
+rustls = { version = "0.23", default-features = false, features = ["std"] }
 rustls-pemfile = "2"
-rustls-platform-verifier = "0.5"
-rustls-pki-types = "1.7"
-webpki-roots = "0.26.7"
-quinn = "0.11.6"
-quinn-proto = "0.11.9"
-structopt = "0.3"
-anyhow = "1.0"
+rustls-pki-types = "1"
+webpki-roots = "1"
+quinn = "0.11"
+quinn-proto = "0.11"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
 tracing = "0.1"
 log = "0.4"
-env_logger = "0.10.0"
-dirs = "5.0.1"
-rustls-native-certs = "0.8.1"
+env_logger = "0.11"
+dirs = "6"
+rustls-native-certs = "0.8"
