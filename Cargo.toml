@@ -34,5 +34,8 @@ env_logger = "0.11"
 dirs = "6"
 rustls-native-certs = "0.8"
 
+[target.'cfg(target_os = "android")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 serial_test = "3"

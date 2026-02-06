@@ -16,6 +16,8 @@ use log::LevelFilter;
 
 mod args;
 mod common;
+#[cfg(target_os = "android")]
+mod protect;
 
 #[derive(Parser, Debug)]
 #[command(name = "qtun-client")]
@@ -29,6 +31,28 @@ struct Opt {
     /// Override hostname used for certificate verification
     #[arg(long = "host", default_value = "bing.com")]
     host: String,
+}
+
+/// Create a UDP socket and optionally protect it for Android VPN mode.
+fn create_udp_socket(vpn_mode: bool) -> Result<std::net::UdpSocket> {
+    let socket = if cfg!(target_os = "windows") {
+        std::net::UdpSocket::bind("0.0.0.0:0")?
+    } else {
+        std::net::UdpSocket::bind("[::]:0")?
+    };
+
+    #[cfg(target_os = "android")]
+    if vpn_mode {
+        use std::os::unix::io::AsRawFd;
+        let fd = socket.as_raw_fd();
+        protect::protect(fd).map_err(|e| anyhow!("failed to protect socket: {:?}", e))?;
+        info!("socket fd {} protected", fd);
+    }
+
+    #[cfg(not(target_os = "android"))]
+    let _ = vpn_mode;
+
+    Ok(socket)
 }
 
 #[tokio::main]
@@ -46,6 +70,7 @@ async fn main() -> Result<()> {
     let mut listen_addr = options.listen;
     let mut relay_addr = options.relay;
     let mut host = options.host;
+    let mut vpn_mode = false;
 
     // parse environment variables
     if let Ok((ss_local_addr, ss_remote_addr)) = args::parse_env_addr() {
@@ -56,6 +81,10 @@ async fn main() -> Result<()> {
     if let Ok(ss_plugin_opts) = args::parse_env_opts() {
         if let Some(h) = ss_plugin_opts.get("host") {
             host = h.clone();
+        }
+        if ss_plugin_opts.contains_key("__android_vpn") {
+            vpn_mode = true;
+            info!("VPN mode enabled");
         }
     }
 
@@ -73,12 +102,13 @@ async fn main() -> Result<()> {
 
     client_crypto.alpn_protocols = common::ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
 
-    // WAR for Windows endpoint
-    let mut endpoint = if cfg!(target_os = "windows") {
-        Endpoint::client("0.0.0.0:0".parse().unwrap())
-    } else {
-        Endpoint::client("[::]:0".parse().unwrap())
-    }?;
+    let socket = create_udp_socket(vpn_mode)?;
+    let mut endpoint = Endpoint::new(
+        quinn::EndpointConfig::default(),
+        None,
+        socket,
+        Arc::new(quinn::TokioRuntime),
+    )?;
     let client_config =
         quinn::ClientConfig::new(Arc::new(QuicClientConfig::try_from(client_crypto)?));
 
@@ -99,7 +129,7 @@ async fn main() -> Result<()> {
         let host = Arc::clone(&host);
         let endpoint = Arc::clone(&endpoint);
 
-        let transfer = transfer(remote, host, endpoint, inbound);
+        let transfer = transfer(remote, host, endpoint, inbound, vpn_mode);
         tokio::spawn(transfer);
     }
 
@@ -111,25 +141,28 @@ async fn transfer(
     host: Arc<String>,
     endpoint: Arc<Endpoint>,
     mut inbound: TcpStream,
+    vpn_mode: bool,
 ) -> Result<()> {
     let new_conn = endpoint
         .connect(*remote, &host)?
         .await
         .map_err(|e| {
             if e == ConnectionError::TimedOut {
-                let socket = if cfg!(target_os = "windows") {
-                    std::net::UdpSocket::bind("0.0.0.0:0").unwrap()
-                } else {
-                    std::net::UdpSocket::bind("[::]:0").unwrap()
-                };
-                let addr = socket.local_addr().unwrap();
-                let ret = endpoint.rebind(socket);
-                match ret {
-                    Ok(_) => {
-                        info!("rebinding to: {}", addr);
+                match create_udp_socket(vpn_mode) {
+                    Ok(socket) => {
+                        let addr = socket.local_addr().unwrap();
+                        let ret = endpoint.rebind(socket);
+                        match ret {
+                            Ok(_) => {
+                                info!("rebinding to: {}", addr);
+                            }
+                            Err(e) => {
+                                error!("rebind fail: {:?}", e);
+                            }
+                        }
                     }
                     Err(e) => {
-                        error!("rebind fail: {:?}", e);
+                        error!("failed to create socket for rebind: {:?}", e);
                     }
                 }
             }
