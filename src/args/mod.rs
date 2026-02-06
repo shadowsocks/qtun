@@ -53,6 +53,7 @@ fn parse_plugin_options(options: &str) -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
 
     #[test]
@@ -84,6 +85,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_env_addr_valid() {
         // Set environment variables for the test
         env::set_var("SS_LOCAL_HOST", "127.0.0.1");
@@ -106,6 +108,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_env_addr_missing_vars() {
         env::remove_var("SS_REMOTE_HOST");
         env::remove_var("SS_REMOTE_PORT");
@@ -117,6 +120,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_env_opts_valid() {
         env::set_var("SS_PLUGIN_OPTIONS", "host=example.com;cert=/tmp/cert.pem");
 
@@ -131,6 +135,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_parse_env_opts_missing_var() {
         env::remove_var("SS_PLUGIN_OPTIONS");
 
