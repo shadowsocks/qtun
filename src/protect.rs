@@ -1,8 +1,8 @@
 use std::io;
-use std::os::unix::io::RawFd;
-use std::os::unix::net::UnixStream;
 use std::io::{Read, Write};
 use std::os::unix::io::AsRawFd;
+use std::os::unix::io::RawFd;
+use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 /// Protect a socket fd by sending it to the Android VPN service via
