@@ -75,8 +75,8 @@ async fn main() -> Result<()> {
 
     // parse environment variables
     if let Ok((ss_local_addr, ss_remote_addr)) = args::parse_env_addr() {
-        relay_addr = ss_local_addr;
-        listen_addr = ss_remote_addr;
+        listen_addr = ss_local_addr;
+        relay_addr = ss_remote_addr;
     }
     if let Ok(ss_plugin_opts) = args::parse_env_opts() {
         if let Some(cert) = ss_plugin_opts.get("cert") {
