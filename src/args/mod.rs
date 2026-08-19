@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::env::var;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -12,11 +12,11 @@ pub fn parse_env_addr() -> Result<(SocketAddr, SocketAddr)> {
     let ss_local_addr = format!("{}:{}", ss_local_host, ss_local_port)
         .to_socket_addrs()?
         .next()
-        .unwrap();
+        .ok_or_else(|| anyhow!("resolved no local socket address"))?;
     let ss_remote_addr = format!("{}:{}", ss_remote_host, ss_remote_port)
         .to_socket_addrs()?
         .next()
-        .unwrap();
+        .ok_or_else(|| anyhow!("resolved no remote socket address"))?;
 
     Ok((ss_local_addr, ss_remote_addr))
 }
@@ -39,12 +39,15 @@ pub fn parse_env_opts() -> Result<HashMap<String, String>> {
 fn parse_plugin_options(options: &str) -> HashMap<String, String> {
     let mut plugin_options = HashMap::<String, String>::new();
 
-    let opts: Vec<&str> = options.split(';').collect();
-
     // FIXME: backslash is not escaped in this plugin
-    for opt in opts {
-        let o: Vec<&str> = opt.splitn(2, '=').collect();
-        plugin_options.insert(o[0].to_string(), o[1].to_string());
+    for opt in options.split(';').filter(|s| !s.is_empty()) {
+        let mut parts = opt.splitn(2, '=');
+        let Some(key) = parts.next() else { continue };
+        if key.is_empty() {
+            continue;
+        }
+        let value = parts.next().unwrap_or_default();
+        plugin_options.insert(key.to_string(), value.to_string());
     }
 
     plugin_options
@@ -82,6 +85,15 @@ mod tests {
     fn test_parse_plugin_options_duplicate_key_last_wins() {
         let opts = parse_plugin_options("secret=first;secret=second");
         assert_eq!(opts.get("secret").unwrap(), "second");
+    }
+
+    #[test]
+    fn test_parse_plugin_options_malformed_is_ignored_or_empty() {
+        let opts = parse_plugin_options("host=example.com;flag_only;=no_key;empty=");
+        assert_eq!(opts.get("host").unwrap(), "example.com");
+        assert_eq!(opts.get("flag_only").unwrap(), "");
+        assert_eq!(opts.get("empty").unwrap(), "");
+        assert!(opts.get("").is_none());
     }
 
     #[test]

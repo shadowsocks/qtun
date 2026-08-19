@@ -4,10 +4,10 @@ use std::sync::Arc;
 use quinn::crypto::rustls::QuicClientConfig;
 use tokio::net::{TcpListener, TcpStream};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use futures::future::try_join;
-use log::{error, info};
+use log::{error, info, warn};
 use quinn::ConnectionError;
 use quinn::Endpoint;
 
@@ -92,8 +92,10 @@ async fn main() -> Result<()> {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
 
-    for certs in rustls_native_certs::load_native_certs().expect("could not load platform certs") {
-        roots.add(certs).unwrap();
+    for certs in rustls_native_certs::load_native_certs().context("could not load platform certs")? {
+        if let Err(err) = roots.add(certs) {
+            warn!("skipping invalid native cert: {:?}", err);
+        }
     }
 
     let mut client_crypto = rustls::ClientConfig::builder()
@@ -150,11 +152,15 @@ async fn transfer(
             if e == ConnectionError::TimedOut {
                 match create_udp_socket(vpn_mode) {
                     Ok(socket) => {
-                        let addr = socket.local_addr().unwrap();
+                        let addr = socket.local_addr().ok();
                         let ret = endpoint.rebind(socket);
                         match ret {
                             Ok(_) => {
-                                info!("rebinding to: {}", addr);
+                                if let Some(addr) = addr {
+                                    info!("rebinding to: {}", addr);
+                                } else {
+                                    info!("rebinding to new local socket");
+                                }
                             }
                             Err(e) => {
                                 error!("rebind fail: {:?}", e);
@@ -167,8 +173,7 @@ async fn transfer(
                 }
             }
             anyhow!("failed to connect: {:?}", e)
-        })
-        .unwrap();
+        })?;
 
     let (mut ri, mut wi) = inbound.split();
     let (mut wo, mut ro) = new_conn
