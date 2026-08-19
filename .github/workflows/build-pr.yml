@@ -1,7 +1,7 @@
 name: Build PR
 on:
   pull_request:
-    types: [ opened, edited, reopened, review_requested ]
+    types: [ opened, edited, reopened, review_requested, synchronize ]
     branches: [ master ]
 
 env:
