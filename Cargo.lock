@@ -665,6 +665,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "futures",
+ "libc",
  "log",
  "quinn",
  "quinn-proto",
