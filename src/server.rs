@@ -147,7 +147,9 @@ async fn main() -> Result<()> {
             conn.refuse();
         } else if options.stateless_retry && !conn.remote_address_validated() {
             info!("requiring connection to validate its address");
-            conn.retry().unwrap();
+            if let Err(e) = conn.retry() {
+                error!("failed to request stateless retry: {:?}", e);
+            }
         } else {
             info!("accepting connection");
             let fut = handle_connection(remote.clone(), conn);
